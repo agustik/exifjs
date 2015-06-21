@@ -9,7 +9,7 @@ Filename can be string or array of strings
 exif.run(filename, callback);
 
 **Usage**
-> Code
+>Code
 
 	var exif = require('exifjs');
 	exif.setup.exiftool = "path/to/exiftool";
