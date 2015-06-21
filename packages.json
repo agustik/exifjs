@@ -1,0 +1,13 @@
+{
+  "name": "exifjs",
+  "version": "0.0.1",
+  "description": "javascript wrapper for exiftool",
+  "main": "exif.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agustik/exifjs"
+  },
+  "dependencies": {
+    "date-format-lite": "~0.7.1"
+  }
+}

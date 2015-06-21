@@ -1,3 +1,4 @@
+require("date-format-lite");
 module.exports = {
 	setup :  {
 		exiftool : (/^win/.test(process.platform)) ? 'exiftool.exe' : 'exiftool',
@@ -11,27 +12,40 @@ module.exports = {
 	run : function (file, callback ){
 		var _root = this;
 		setTimeout(function(){
-			var isWin = /^win/.test(process.platform);
-			var separator = (isWin) ? '\\' : '/';
-			var command = _root.setup.exiftool  + ' -j "'+file+'"',
-				exec = require('child_process').exec,
-			    child, x;
 
+			var command, 
+				exec = require('child_process').exec,
+				child, x;
+			if (typeof file == 'object'){
+				var c="";
+				for (k in file){
+					c += '"' + file[k] + '" '; 
+				}
+				file = c;
+			}else{
+				file = '"'+ file +'"';
+			}
+			
+			command = _root.setup.exiftool  + ' '+file+' -j';
 			    child = exec(command,
 				    function (error, stdout, stderr) {
 				        if(stdout!==''){
-				           data = JSON.parse(stdout);
-				           data = data[0];
-				           data = _root.skip(data);
-				           data['SourceFile'] = file;
-				           x = file.split(separator);
-				           data['safn'] = x[x.length-2];
-				           data['unixtimestamps'] = _root.exiftimestamps(data['XMPFileStamps']);
-				           x = x.slice(0,x.length-1).join(separator);
-				           data['Directory'] = x
-				           data = _root.fixtime(data);
 
-				           callback(null, data);
+				        	var arr=[];
+				         	// try to parse to json
+							data  = _root.parse(stdout);
+
+							// if no json key, then callback error
+							if(!data.json){
+								callback(data);
+								return;
+							}
+
+							for (i in data.json){
+								arr.push(_root.clean(data.json[i], file));
+							}
+							callback(null, arr);
+							return true;
 				        }
 				        if(stderr!==''){
 				           callback(stderr)
@@ -41,6 +55,17 @@ module.exports = {
 				        }
 				    });
 		},0);
+	},
+
+	parse : function (string){
+		try {
+			return {
+				json :JSON.parse(string)
+			};
+		}catch(e){
+			return e;
+		}
+
 	},
 	fixtime : function (d){
 		var parent = this, timestamp, value;
@@ -64,7 +89,7 @@ module.exports = {
 		if(typeof d == 'string'){
 			d = [d];
 		}
-		if(typeof d == 'array'){
+		if(typeof d == 'object'){
 			if(d.length > 0){
 				d.forEach(function (exiftimestamp){
 					x = parent.MatchExifTimestamp(exiftimestamp);
@@ -113,15 +138,15 @@ module.exports = {
 		}
 	},
 	clean : function (d){
-		var key, value, skip = [], obj = {};
-		d = JSON.parse(d);
-		for (key in d ){
-			if(skip.indexOf(key) == -1){
-				obj[key] = d[key];
-			}
-			
-		}
-		return obj;
+
+
+		var data, _root=this;
+
+		data = _root.skip(d);
+		data['epoch_XMPFileStamps'] = _root.exiftimestamps(data['XMPFileStamps']);
+		data = _root.fixtime(data);
+
+		return data;
 	},
 	skip : function(d){
 		var key, value, obj={}, index = this.setup.index;
