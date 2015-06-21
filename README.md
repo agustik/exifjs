@@ -6,7 +6,7 @@ javascript wrapper for exiftool.
 
 Filename can be string or array of strings
 
-exif.run(filename, callback);
+exif.get(filename, callback);
 
 **Usage**
 >Code example
@@ -16,7 +16,7 @@ exif.run(filename, callback);
 
 	var file = ["path/to/first/image","path/to/second/image"];
 
-	exif.run(file, function (err, json){
+	exif.get(file, function (err, json){
 		console.log(json);
 	});
 
