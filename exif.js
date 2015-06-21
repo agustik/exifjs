@@ -4,12 +4,7 @@ module.exports = {
 		exiftool : (/^win/.test(process.platform)) ? 'exiftool.exe' : 'exiftool',
 		index : true
 	},
-	get : function (file, callback) {
-		this.run(file, function (e,d){
-			callback(e,d);
-		});
-	},
-	run : function (file, callback ){
+	get : function (file, callback ){
 		var _root = this;
 		setTimeout(function(){
 
