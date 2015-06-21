@@ -21,6 +21,5 @@ exif.run(filename, callback);
 	});
 
 
-
 Exiftool
 http://www.sno.phy.queensu.ca/~phil/exiftool/
