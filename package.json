@@ -9,5 +9,6 @@
   },
   "dependencies": {
     "date-format-lite": "~0.7.1"
-  }
+  },
+  "license" : "GPL-v2"
 }
