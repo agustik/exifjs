@@ -15,10 +15,12 @@ exif.get(filename, callback);
 
 **Usage with Callback**
 >
-	
+
 	var exifjs = require('exifjs');
 
 	var params = { exiftool : 'Path/to/exiftool/'}; // default is path
+
+	params.epoch = 's'; // default is ms (milliseconds)
 
 	var exif = exifjs(params);
 
