@@ -1,6 +1,6 @@
 {
   "name": "exifjs",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "javascript wrapper for exiftool",
   "main": "exif.js",
   "repository": {
@@ -8,7 +8,11 @@
     "url": "https://github.com/agustik/exifjs"
   },
   "dependencies": {
-    "date-format-lite": "~0.7.1"
+    "date-format-lite": "~0.7.1",
+    "promise": "^7.0.4"
   },
-  "license" : "GPL-v2"
+  "license": "GPL-2",
+  "devDependencies": {
+    "jasmine": "^2.3.2"
+  }
 }
