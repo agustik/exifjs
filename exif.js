@@ -39,7 +39,9 @@ if (windows){
  */
 var exif = function (params){
 	if (!params){
-		params = {};
+		params = {
+			epoch : 'ms'
+		};
 	}
 	if('exiftool' in params){
 		exiftool = params.exiftool;
@@ -139,7 +141,11 @@ var exif = function (params){
 				TimeRegexShort.test(timestamp) ||
 				TimeRegexBasic.test(timestamp)
 				){
-				return timestamp.date().getTime();
+				var time = timestamp.date().getTime();
+				if(params.epoch === 's'){
+					time = time / 1000;
+				}
+				return time;
 			}else{
 				return timestamp;
 			}
