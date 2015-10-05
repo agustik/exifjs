@@ -1,158 +1,169 @@
+'use strict'
+
+/**
+ * @Author: Ágúst Ingi Kjartansson <agust.ingi.kjartansson@gmail.com>
+ * @LICENSE: GPL-V2
+ */
+
 require("date-format-lite");
-module.exports = {
-	setup :  {
-		exiftool : (/^win/.test(process.platform)) ? 'exiftool.exe' : 'exiftool',
-		index : true
-	},
-	get : function (file, callback ){
-		var _root = this;
-		setTimeout(function(){
+var Promise = require('promise');
+var exec = require('child_process').exec;
 
-			var command, 
-				exec = require('child_process').exec,
-				child, x;
-			if (typeof file == 'object'){
-				var c="";
-				for (k in file){
-					c += '"' + file[k] + '" '; 
-				}
-				file = c;
-			}else{
-				file = '"'+ file +'"';
-			}
-			
-			command = _root.setup.exiftool  + ' '+file+' -j';
-			    child = exec(command,
-				    function (error, stdout, stderr) {
-				        if(stdout!==''){
+/**
+ * Parses time from exif, REGEX
+ */
+var TimeRegexShort = new RegExp(/[\d]{4,4}:[\d]{2,2}:[\d]{2,2}\s[\d]{2,2}:[\d]{2,2}:[\d]{2,2}Z/);
+var TimeRegexLong = new RegExp(/[\d]{4,4}:[\d]{2,2}:[\d]{2,2}\s[\d]{2,2}:[\d]{2,2}:[\d]{2,2}\+[\d]{2,2}:[\d]{2,2}/);
+var TimeRegexBasic = new RegExp(/[\d]{4,4}-[\d]{2,2}-[\d]{2,2}/);
 
-				        	var arr=[];
-				         	// try to parse to json
-							data  = _root.parse(stdout);
+/**
+ * Checks if windows
+ * @return {bool}  - True if windows
+ */
+var windows = /^win/.test(process.platform);
 
+/**
+ * Defines exiftool default
+ */
+var exiftool;
+if (windows){
+	exiftool = 'exiftool.exe';
+}else{
+	exiftool = 'exiftool';
+}
+
+/**
+ * Exif main functioon
+ * @param  {object} params - Object with settings of any
+ * @return {object|Array}        - Object or Array of objects
+ */
+var exif = function (params){
+	if (!params){
+		params = {};
+	}
+	if('exiftool' in params){
+		exiftool = params.exiftool;
+	}
+	return {
+		/**
+		 * Access point, validates function and then passes to exec;
+		 * @param  {string|Array}   file 	- String or array with file paths
+		 * @param  {Function} callback 	 	- Callback to call after
+		 * @return {object}            		- Promise
+		 */
+		get : function (file, callback ){
+			callback =  (typeof callback === 'function') ? callback : function (){};
+			return this._exec(file, callback);
+		},
+		_exec : function (file, callback){
+			var _root = this;
+			return new Promise( function (resolve, reject) {
+				setTimeout(function(){
+					var command, child, obj;
+					if(Array.isArray(file)){
+						file = file.map(function (f){
+							return '"' + f + '"';
+						}).join(' ');
+					}else{
+						file = '"'+ file +'"';
+					}
+					command = exiftool  + ' '+file+' -j';
+					child = exec(command,
+						function (error, stdout, stderr) {
+							if (error || stdout =='') {
+									reject(error);
+									callback(error);
+									return;
+							}
+
+							var arr=[], data;
+								// try to parse to json
+								data  = _root._parseJSON(stdout);
 							// if no json key, then callback error
-							if(!data.json){
+							if(!data.object){
 								callback(data);
 								return;
 							}
 
-							for (i in data.json){
-								arr.push(_root.clean(data.json[i], file));
+							// if many ..
+							for ( var i = 0; i < data.object.length ; i++ ){
+								obj = data.object[i];
+								arr.push(_root._timestamps(obj));
 							}
+							if(arr.length === 1){
+								arr = arr[0];
+							}
+							resolve(arr);
 							callback(null, arr);
-							return true;
-				        }
-				        if(stderr!==''){
-				           callback(stderr)
-				        }
-				        if (error !== null) {
-				            callback(error)
-				        }
-				    });
-		},0);
-	},
+							return;
 
-	parse : function (string){
-		try {
-			return {
-				json :JSON.parse(string)
-			};
-		}catch(e){
-			return e;
-		}
+						});
+				}, 0);
+			});
+		},
+		/**
+		 * Parses all keys and trys to parse date to epoch
+		 * @param  {object} object - Exif object
+		 * @return {object}        - Exif object parsed
+		 */
+		_timestamps : function (object){
+			var value, self = this, newObj = {};
+			for (var key in object){
+				value = object[key];
 
-	},
-	fixtime : function (d){
-		var parent = this, timestamp, value;
-		var key, date_format = "YYYY-MM-DD hh:mm",  tofix = ['ProfileDateTime', 'FileModifyDate','FileAccessDate','FileCreateDate','ReleaseDate', 'DateCreated'];
-		for (key in d ){
-			if (tofix.indexOf(key) !==-1){
-				value = d[key];
-				if(value !== undefined){
+				newObj[key] = '';
 
-					timestamp = parent.ExifTimeStamp(value, date_format);
-					d[key] = timestamp;
-					d['epoch_'+key] = timestamp.date().getTime() / 1000;
-					
+				if(typeof value ==='string'){
+					newObj[key] = self._parseTime(value);
+				}else if (typeof value === 'object' && Array.isArray(value)){
+					newObj[key] = [];
+					value.forEach(function (v, k){
+						newObj[key].push(self._parseTime(v));
+					});
+				}else {
+					newObj[key] =value;
 				}
-			}
-		}
-		return d;
-	},
-	exiftimestamps : function (d){
-		var x, arr = [], parent = this;
-		if(typeof d == 'string'){
-			d = [d];
-		}
-		if(typeof d == 'object'){
-			if(d.length > 0){
-				d.forEach(function (exiftimestamp){
-					x = parent.MatchExifTimestamp(exiftimestamp);
-					if(x !== false){
-						arr.push(parent.ExifTimeStamp(exiftimestamp,'unix'));
-					}
-				});
-				return arr;
-			}
-		}else{
-			return '';
-		}
-	},
-	MatchExifTimestamp : function (time){
-		var x = {
-			year :'',
-			month : '',
-			day : '',
-			hour : '',
-			minute : ''
-		};
-		if(/^([0-9]{4,4}):([0-9]{2,2}):([0-9]{2,2})\s([0-9]{2,2}):([0-9]{2,2})/.test(time)){
 
-			x.year 		= time.substring(0,4);
-			x.month 	= time.substring(5,7);
-			x.day 		= time.substring(8,10);
-			x.hour		= time.substring(11,13);
-			x.minute 	= time.substring(14,16);
-			return x;
-		}else{
-			return false;
-		}
-	},
-	ExifTimeStamp : function(timestamp, type){
-		type = (type) ? type : 'YYYY-MM-DD hh:mm';
-		var x = this.MatchExifTimestamp(timestamp);
-		if (!x){
-			return timestamp.date(type);
-		}else{
-			var timestring = x.year + '-' + x.day + '-' + x.month + ' ' + x.hour +':' + x.minute;
-			if(type == 'unix'){
-				return timestring.date().getTime() / 1000;
+			}
+
+			return newObj;
+		},
+		/**
+		 * Parse time function, retuns same string of not time
+		 * @param  {string} timestamp - Value from exif object
+		 * @return {string|int}           - Epoch time if like time
+		 */
+		_parseTime : function (timestamp){
+			if (
+				TimeRegexLong.test(timestamp) ||
+				TimeRegexShort.test(timestamp) ||
+				TimeRegexBasic.test(timestamp)
+				){
+				return timestamp.date().getTime();
 			}else{
-				return timestring.date(type);
+				return timestamp;
+			}
+
+		},
+		/**
+		 * Json Parser, returns exepction if error else object
+		 * @param  {string} string - Input json to parse
+		 * @return {object}        - Error or js object
+		 */
+		_parseJSON : function (string){
+			try {
+				return {
+					object :JSON.parse(string)
+				};
+			}catch(e){
+				return e;
 			}
 		}
-	},
-	clean : function (d){
-
-
-		var data, _root=this;
-
-		data = _root.skip(d);
-		data['epoch_XMPFileStamps'] = _root.exiftimestamps(data['XMPFileStamps']);
-		data = _root.fixtime(data);
-
-		return data;
-	},
-	skip : function(d){
-		var key, value, obj={}, index = this.setup.index;
-		for (key in d){
-			if (index == true){
-				obj[key] = d[key];
-			}else if (index.indexOf(key) !==-1 ){
-				obj[key] = d[key];
-			}
-		}
-		return obj;
 	}
-
 };
+
+/**
+ * Exports exif module
+ * @type {object}
+ */
+module.exports = exif;
