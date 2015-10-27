@@ -7,14 +7,19 @@
 
 require("date-format-lite");
 var Promise = require('promise');
-var exec = require('child_process').exec;
+var Process = require('child_process');
 
 /**
  * Parses time from exif, REGEX
  */
-var TimeRegexShort = new RegExp(/[\d]{4,4}:[\d]{2,2}:[\d]{2,2}\s[\d]{2,2}:[\d]{2,2}:[\d]{2,2}Z/);
-var TimeRegexLong = new RegExp(/[\d]{4,4}:[\d]{2,2}:[\d]{2,2}\s[\d]{2,2}:[\d]{2,2}:[\d]{2,2}\+[\d]{2,2}:[\d]{2,2}/);
-var TimeRegexBasic = new RegExp(/[\d]{4,4}-[\d]{2,2}-[\d]{2,2}/);
+var ValidTimestamps = [
+	new RegExp(/[\d]{4,4}-[\d]{2,2}-[\d]{2,2}/),
+	new RegExp(/[\d]{4,4}:[\d]{2,2}:[\d]{2,2}\s[\d]{2,2}:[\d]{2,2}Z/),
+	new RegExp(/[\d]{4,4}:[\d]{2,2}:[\d]{2,2}\s[\d]{2,2}:[\d]{2,2}:[\d]{2,2}/),
+	new RegExp(/[\d]{4,4}:[\d]{2,2}:[\d]{2,2}\s[\d]{2,2}:[\d]{2,2}:[\d]{2,2}Z/),
+	new RegExp(/[\d]{4,4}:[\d]{2,2}:[\d]{2,2}\s[\d]{2,2}:[\d]{2,2}:[\d]{2,2}\.[\d]{2,2}/),
+	new RegExp(/[\d]{4,4}:[\d]{2,2}:[\d]{2,2}\s[\d]{2,2}:[\d]{2,2}:[\d]{2,2}\+[\d]{2,2}:[\d]{2,2}/)
+];
 
 /**
  * Checks if windows
@@ -32,20 +37,134 @@ if (windows){
 	exiftool = 'exiftool';
 }
 
-/**
- * Exif main functioon
- * @param  {object} params - Object with settings of any
- * @return {object|Array}        - Object or Array of objects
- */
-var exif = function (params){
-	if (!params){
-		params = {
-			epoch : 'ms'
+
+
+var jobTools = {
+	_fetchexif : function (files,  callback){
+
+		var self = this;
+		if(!Array.isArray(files)){
+			files = [files];
+		}
+		files.push('-j');
+		files.push('-fast2');
+		return self.exiftool(files, callback);
+	},
+	_deleteExif : function (file, callback){
+		var self = this;
+		if(Array.isArray(file)){
+			callback('Cannot be array');
+			return;
+		}
+		file = ['-overwrite_original_in_place','-all=', file];
+		return self.exiftool(file, callback);
+	},
+	exiftool : function (command, callback){
+		var self = this;
+		return new Promise( function (resolve, reject) {
+		 var cmd = Process.spawn('C:\\temp\\exiftool.exe', command);
+		 var stream = '';
+		 cmd.stdout.on('data', function (chunk){
+			 stream +=chunk;
+		 });
+
+		 cmd.stdout.on('close', function (data){
+			resolve(stream);
+			callback(null, stream);
+		 });
+
+		 cmd.stderr.on('end', function (data){
+			 reject('ERROR', data);
+			 //callback(data);
+		 });
+		 cmd.on('exit', function (code){
+			 if (code != 0){
+				 reject('ERROR CODE:' + stream);
+				// callback('code:' +code);
+			 }
+		 });
+	});
+	},
+		/**
+	 * Parses all keys and trys to parse date to epoch
+	 * @param  {object} object - Exif object
+	 * @return {object}        - Exif object parsed
+	 */
+	_timestamps : function (object, format){
+		var value, self = this, newObj = {};
+		for (var key in object){
+			value = object[key];
+
+			newObj[key] = '';
+
+			if(typeof value ==='string'){
+				newObj[key] = self._parseTime(value, format);
+			}else if (typeof value === 'object' && Array.isArray(value)){
+				newObj[key] = [];
+				value.forEach(function (v, k){
+					newObj[key].push(self._parseTime(v, format));
+				});
+			}else {
+				newObj[key] =value;
+			}
+
+		}
+
+		return newObj;
+	},
+	/**
+	 * Parse time function, retuns same string of not time
+	 * @param  {string} timestamp - Value from exif object
+	 * @return {string|int}           - Epoch time if like time
+	 */
+	_parseTime : function (timestamp, format){
+		format = format || 'ms';
+		var time, i, regex, len = ValidTimestamps.length;
+		for (i = 0; i < len; i++ ){
+			regex = ValidTimestamps[i];
+			if(regex.test(timestamp)){
+				console.log(timestamp);
+				time = timestamp.date().getTime();
+				if(format === 's'){
+					time = time / 1000;
+				}
+				return  time;
+			}
 		};
+
+		return timestamp;
+
+	},
+	/**
+	 * Json Parser, returns exepction if error else object
+	 * @param  {string} string - Input json to parse
+	 * @return {object}        - Error or js object
+	 */
+	_parseJSON : function (string){
+		try {
+			return {
+				object :JSON.parse(string)
+			};
+		}catch(e){
+			return e;
+		}
 	}
-	if('exiftool' in params){
-		exiftool = params.exiftool;
-	}
+};
+
+	/**
+	 * Exif main functioon
+	 * @param  {object} params - Object with settings of any
+	 * @return {object|Array}        - Object or Array of objects
+	 */
+var exif = function (params){
+		if (!params){
+			params = {
+				epoch : 'ms'
+			};
+		}
+		if('exiftool' in params){
+			exiftool = params.exiftool;
+		}
 	return {
 		/**
 		 * Access point, validates function and then passes to exec;
@@ -55,116 +174,35 @@ var exif = function (params){
 		 */
 		get : function (file, callback ){
 			callback =  (typeof callback === 'function') ? callback : function (){};
-			return this._exec(file, callback);
-		},
-		_exec : function (file, callback){
-			var _root = this;
-			return new Promise( function (resolve, reject) {
-				setTimeout(function(){
-					var command, child, obj;
-					if(Array.isArray(file)){
-						file = file.map(function (f){
-							return '"' + f + '"';
-						}).join(' ');
-					}else{
-						file = '"'+ file +'"';
-					}
-					command = exiftool  + ' '+file+' -j';
-					child = exec(command,
-						function (error, stdout, stderr) {
-							if (error || stdout =='') {
-									reject(error);
-									callback(error);
-									return;
-							}
+			return jobTools._fetchexif(file, function (err, response){
+				if(err){
+					callback(err);
+					return;
+				}
+				var data = jobTools._parseJSON(response);
+				// if no json key, then callback error
+				if(('object' in data) === false){
+					callback(data);
+					return;
+				}
 
-							var arr=[], data;
-								// try to parse to json
-								data  = _root._parseJSON(stdout);
-							// if no json key, then callback error
-							if(!data.object){
-								callback(data);
-								return;
-							}
-
-							// if many ..
-							for ( var i = 0; i < data.object.length ; i++ ){
-								obj = data.object[i];
-								arr.push(_root._timestamps(obj));
-							}
-							if(arr.length === 1){
-								arr = arr[0];
-							}
-							resolve(arr);
-							callback(null, arr);
-							return;
-
-						});
-				}, 0);
+				var	arr = data.object.map(function (obj){
+					return jobTools._timestamps(obj, params.epoch);
+				});
+				callback(null, arr);
 			});
 		},
 		/**
-		 * Parses all keys and trys to parse date to epoch
-		 * @param  {object} object - Exif object
-		 * @return {object}        - Exif object parsed
+		 * Deletes exif data from image
 		 */
-		_timestamps : function (object){
-			var value, self = this, newObj = {};
-			for (var key in object){
-				value = object[key];
-
-				newObj[key] = '';
-
-				if(typeof value ==='string'){
-					newObj[key] = self._parseTime(value);
-				}else if (typeof value === 'object' && Array.isArray(value)){
-					newObj[key] = [];
-					value.forEach(function (v, k){
-						newObj[key].push(self._parseTime(v));
-					});
-				}else {
-					newObj[key] =value;
-				}
-
-			}
-
-			return newObj;
+		delete : function (file, callback){
+			callback =  (typeof callback === 'function') ? callback : function (){};
+			return jobTools._deleteExif(file, callback);
 		},
-		/**
-		 * Parse time function, retuns same string of not time
-		 * @param  {string} timestamp - Value from exif object
-		 * @return {string|int}           - Epoch time if like time
-		 */
-		_parseTime : function (timestamp){
-			if (
-				TimeRegexLong.test(timestamp) ||
-				TimeRegexShort.test(timestamp) ||
-				TimeRegexBasic.test(timestamp)
-				){
-				var time = timestamp.date().getTime();
-				if(params.epoch === 's'){
-					time = time / 1000;
-				}
-				return time;
-			}else{
-				return timestamp;
-			}
-
-		},
-		/**
-		 * Json Parser, returns exepction if error else object
-		 * @param  {string} string - Input json to parse
-		 * @return {object}        - Error or js object
-		 */
-		_parseJSON : function (string){
-			try {
-				return {
-					object :JSON.parse(string)
-				};
-			}catch(e){
-				return e;
-			}
+		set : function (file, attrs, callback){
+			console.log(file, attrs);
 		}
+
 	}
 };
 
