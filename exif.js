@@ -123,7 +123,6 @@ var jobTools = {
 		for (i = 0; i < len; i++ ){
 			regex = ValidTimestamps[i];
 			if(regex.test(timestamp)){
-				console.log(timestamp);
 				time = timestamp.date().getTime();
 				if(format === 's'){
 					time = time / 1000;
