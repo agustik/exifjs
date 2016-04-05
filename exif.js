@@ -62,7 +62,7 @@ var jobTools = {
 	exiftool : function (command, callback){
 		var self = this;
 		return new Promise( function (resolve, reject) {
-		 var cmd = Process.spawn('C:\\temp\\exiftool.exe', command);
+		 var cmd = Process.spawn(exiftool, command);
 		 var stream = '';
 		 cmd.stdout.on('data', function (chunk){
 			 stream +=chunk;
